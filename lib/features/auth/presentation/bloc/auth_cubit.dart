@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:service_hub/core/error/failures.dart';
 import 'package:service_hub/features/auth/domain/usecases/login_usecase.dart';
 import 'package:service_hub/features/auth/domain/usecases/register_usecase.dart';
 import 'package:service_hub/features/auth/presentation/bloc/auth_state.dart';
@@ -9,21 +10,27 @@ class AuthCubit extends Cubit<AuthState> {
   AuthCubit({required this.loginUsecase, required this.registerUsecase})
     : super(AuthState());
 
-    // login 
+  // login
 
   Future<void> login({required String email, required String password}) async {
     emit(state.copyWith(status: AuthStatus.loading, errorMessage: null));
-    try {
-      final user = await loginUsecase(email: email, password: password);
-      emit(state.copyWith(status: AuthStatus.authenticated, user: user));
-    } catch (e) {
-      emit(
-        state.copyWith(status: AuthStatus.error, errorMessage: e.toString()),
-      );
-    }
+    final result = await loginUsecase(email: email, password: password);
+    result.fold(
+      (failures) {
+        emit(
+          state.copyWith(
+            status: AuthStatus.error,
+            errorMessage: failures.message,
+          ),
+        );
+      },
+      (user) {
+        emit(state.copyWith(status: AuthStatus.authenticated, user: user));
+      },
+    );
   }
 
-  // register 
+  // register
 
   Future<void> register({
     required String name,
@@ -31,21 +38,27 @@ class AuthCubit extends Cubit<AuthState> {
     required String password,
   }) async {
     emit(state.copyWith(status: AuthStatus.loading, errorMessage: null));
-    try {
-      final user = await registerUsecase(
-        name: name,
-        email: email,
-        password: password,
-      );
-      state.copyWith(status: AuthStatus.authenticated, user: user);
-    } catch (e) {
-      emit(
-        state.copyWith(status: AuthStatus.error, errorMessage: e.toString()),
-      );
-    }
+    final result = await registerUsecase(
+      name: name,
+      email: email,
+      password: password,
+    );
+    result.fold(
+      (failures) {
+        emit(
+          state.copyWith(
+            status: AuthStatus.error,
+            errorMessage: failures.message,
+          ),
+        );
+      },
+      (user) {
+        emit(state.copyWith(status: AuthStatus.authenticated, user: user));
+      },
+    );
   }
 
-// unauthaticated
+  // unauthaticated
 
   void setunauthenticated() {
     emit(state.copyWith(status: AuthStatus.unauthenticated, user: null));

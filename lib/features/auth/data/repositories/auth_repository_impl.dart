@@ -1,50 +1,57 @@
+import 'package:dartz/dartz.dart';
+import 'package:service_hub/core/error/exceptions.dart';
+import 'package:service_hub/core/error/failures.dart';
 import 'package:service_hub/features/auth/data/datasources/firebase_auth_datasource.dart';
+import 'package:service_hub/features/auth/data/datasources/firebase_user_datasoure.dart';
 import 'package:service_hub/features/auth/data/models/user_model.dart';
 import 'package:service_hub/features/auth/domain/entities/user_entity.dart';
 import 'package:service_hub/features/auth/domain/repositories/auth_repository.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final FirebaseAuthDatasource datasource;
-  AuthRepositoryImpl(this.datasource);
+  final FirebaseUserDatasoure firestoreDatasource;
+  AuthRepositoryImpl(this.datasource, this.firestoreDatasource);
   @override
-  Future<UserEntity> login({
+  Future<Either<Failures, UserEntity>> login({
     required String email,
     required String password,
   }) async {
-    final credential = await datasource.login(email: email, password: password);
-
-    final user = credential.user;
-
-    if (user == null) {
-      throw Exception('login failed');
+    try {
+      final user = await datasource.login(email: email, password: password);
+      return Right(user);
+    } on InvalidCredentialsException {
+      return const Left(InvalidCredentialsFailure());
     }
-    return UserModel.fromFirebaseUser(
-      id: user.uid,
-      name: user.displayName ?? '',
-      email: user.email ?? "",
-    );
   }
 
   @override
-  Future<UserEntity> register({
+  Future<Either<Failures, UserEntity>> register({
     required String name,
     required String email,
     required String password,
   }) async {
-    final credential = await datasource.register(
-      email: email,
-      password: password,
-    );
-    final user = credential.user;
-    if (user == null) {
-      throw Exception("registeration is failed");
+    try {
+      final user = await datasource.register(
+        name: name,
+        email: email,
+        password: password,
+      );
+
+      final result = await createUSerprofile(
+        uid: user.id,
+        name: user.name,
+        email: user.email,
+      );
+      return result;
+    } on WeekPasswordExecption {
+      return const Left(WeakPasswordFailure());
+    } on NetworkException {
+      return const Left(NetworkFailure());
+    } on ServerException {
+      return const Left(ServerFailure());
+    } on Exception {
+      return const Left(UnknownFailure());
     }
-    await user.updateDisplayName(name);
-    return UserModel.fromFirebaseUser(
-      id: user.uid,
-      name: name,
-      email: user.email ?? email,
-    );
   }
 
   @override
@@ -64,5 +71,39 @@ class AuthRepositoryImpl implements AuthRepository {
         name: user.displayName,
       );
     });
+  }
+
+  @override
+  Future<Either<Failures, UserEntity>> createUSerprofile({
+    required String uid,
+    required String name,
+    required String email,
+  }) async {
+    try {
+      await firestoreDatasource.createUserProfile(
+        uid: uid,
+        name: name,
+        email: email,
+      );
+      return Right(UserModel(id: uid, name: name, email: email));
+    } on FirestoreException catch (e) {
+      return Left(FirestoreFailure(e.message));
+    } on Exception {
+      return const Left(UnknownFailure());
+    }
+  }
+
+  @override
+  Future<Either<Failures, UserEntity>> getUserProfile({
+    required String uid,
+  }) async {
+    try {
+      final user = await firestoreDatasource.getUserProfile(uid: uid);
+      return Right(user);
+    } on FirestoreException catch (e) {
+      return Left(FirestoreFailure(e.message));
+    } on Exception {
+      return const Left(UnknownFailure());
+    }
   }
 }
